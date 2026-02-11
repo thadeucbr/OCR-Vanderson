@@ -7,7 +7,7 @@
 │                    NAVEGADOR (FRONTEND)                 │
 │                  http://localhost:5173                  │
 │                                                         │
-│    React 18 + Vite + TypeScript (91 packages)          │
+│    React 18 + Vite + TypeScript (~13 packages)         │
 │    ├── Upload ZIP                                       │
 │    ├── Visualização de Resultados                      │
 │    └── Histórico de Análises                           │
@@ -18,7 +18,7 @@
 │                   API BACKEND                           │
 │               http://localhost:3001                    │
 │                                                        │
-│   Express.js + Node.js + TypeScript (190 packages)   │
+│   Express.js + Node.js + TypeScript (~25 packages)   │
 │   ├── POST /api/analyze                               │
 │   ├── GET  /api/analyses/:id                          │
 │   └── GET  /api/analyses (paginated)                 │
@@ -59,16 +59,24 @@
    ↓
 4. [ZIPSERVICE] Extrai PDFs em memória (unzipper)
    ↓
-5. [PDFSERVICE] Extrai texto de cada PDF
-   └─→ Se PDF searchable: pdf-parse
-   └─→ Se PDF com imagens: OCR tesseract.js
+5. [PDFSERVICE] Estratégia de Extração em Cascata
+   ├─→ 1. Tentativa Texto Nativo (pdf-parse)
+   │      └─→ Se > 50 chars: Sucesso
+   ├─→ 2. Fallback OCR Local (Tesseract.js)
+   │      └─→ Se texto insuficiente em 1
+   │      └─→ Gera confiança média (%)
+   └─→ 3. Decisão de Fluxo
+          ├─→ Se Texto Rico + Alta Confiança (>80%): Via Texto (Rápido/Barato)
+          └─→ Se Texto Pobre/Baixa Confiança: Via Vision (Lento/Preciso)
    ↓
-6. [AISERVICE] Para cada PDF:
-   ├─→ Envia texto + prompt para OpenAI
-   ├─→ Recebe JSON com dados extraídos
+6. [ANALYSISSERVICE] Processamento Inteligente (via OpenAI):
+   ├─→ Rota Texto: Envia texto extraído para GPT-4o-mini
+   ├─→ Rota Vision: Renderiza páginas como imagens -> GPT-4o-mini Vision
+   │      └─→ Validação cruzada de evidências (OCR vs Imagem)
+   ├─→ Recebe JSON estruturado e normalizado
    └─→ Armazena em array
    ↓
-7. [AISERVICE] Se 2+ PDFs:
+7. [ANALYSISSERVICE] Se 2+ PDFs:
    ├─→ Envia todos os dados para OpenAI
    ├─→ IA compara e detecta divergências
    └─→ Retorna lista de issues
@@ -120,7 +128,27 @@
 |---------|----------|-------|
 | IA | OpenAI | ChatGPT API (gpt-4o-mini) |
 
-## 📦 Estrutura de Pastas
+### 👁️ Estratégia de OCR e Visão
+
+O sistema utiliza uma abordagem em camadas para garantir a extração de dados mesmo em documentos digitalizados com baixa qualidade:
+
+1. **Camada 1: Extração de Texto (pdf-parse)**
+   - Prioridade para PDFs nativos (text-based).
+   - Extração rápida e sem custo de tokens de imagem.
+
+2. **Camada 2: OCR Local (Tesseract.js)**
+   - Ativado automaticamente quando pdf-parse falha.
+   - Renderização de alta qualidade das páginas.
+   - Cálculo de score de confiança médio.
+   - **Fail-fast**: Se confiança < 60% ou texto < 20 chars, descarta resultado para forçar uso do Vision.
+
+3. **Camada 3: GPT Vision (GPT-4o-mini)**
+   - **Ultimate Fallback**: Acionado quando Texto e OCR falham ou têm baixa confiança (<80%).
+   - Analisa visualmente o documento (como um humano).
+   - Extrai dados com "evidências" (trechos exatos lidos) para validação.
+   - Capaz de ler manuscritos, carimbos e layouts complexos que quebram parsers tradicionais.
+
+## � Estrutura de Pastas
 
 ```
 OCR Vanderson/
@@ -261,17 +289,18 @@ REQUEST: POST /api/analyze
    
 3. Para cada PDF:
    a) pdfService.extractTextFromPDF()
-      ✓ Texto extraído (3000 caracteres)
+      ✓ Tenta pdf-parse -> Tesseract
+      ✓ Retorna texto + confiança
    
-   b) sanitizeText()
-      ✓ Texto limpo e normalizado
+   b) analysisService: Decisão de Rota
+      ✓ Confiança > 80%? -> Rota Texto
+      ✓ Confiança < 80%? -> Rota Vision (Render + GPT Vision)
    
-   c) openai.extractDataWithAI()
-      PROMPT: "Extract CPF, nome, endereco, telefone, email, ..."
+   c) openai.extractData...() (Texto ou Vision)
       RESPONSE: {"personalData": {...}, "vehicleData": {...}}
       ✓ Dados estruturados recebidos
    
-4. openai.detectDivergencies()
+4. analysisService -> openai.detectDivergencies()
    INPUT: [doc1_data, doc2_data]
    PROMPT: "Compare e identifique divergências..."
    RESPONSE: {"divergencies": [{type: "inconsistent_data", ...}]}
