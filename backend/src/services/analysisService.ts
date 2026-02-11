@@ -59,7 +59,7 @@ export async function analyzeZipFile(zipBuffer: Buffer): Promise<AnalysisResult>
 
           for (const page of rendered) {
             try {
-              console.log(`\n   🤖 Sending page ${page.pageNum} image to OpenAI...`);
+              console.log(`\n   🤖 Sending page ${page.pageNum} image to OpenAI (gpt-4o-mini)...`);
               const pageData = await extractDataFromImage(page.imageBuffer, file.name, page.pageNum);
               pageResults.push(pageData);
             } catch (pageErr) {

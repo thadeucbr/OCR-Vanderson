@@ -1,7 +1,7 @@
 import { pdfToPng } from 'pdf-to-png-converter';
 import sharp from 'sharp';
 
-const MIN_IMAGE_SIZE = 30000; // 30KB minimum for valid image
+const MIN_IMAGE_SIZE = 10000; // 10KB minimum (lowered to allow simple pages/receipts)
 const MAX_DPI_SCALE = 2.0; // 150 DPI equivalent
 
 export interface RenderedPage {
@@ -110,7 +110,7 @@ export async function preprocessImageForOCR(
     // Enhance contrast and sharpen for OCR
     const processed = await sharp(imageBuffer)
       .normalise() // Auto-contrast enhancement
-      .median(1) // Reduce noise (denoise)
+      // .median(1) // Removed: can blur small text too much
       .sharpen({ sigma: 1.5 })
       .png({ compressionLevel: 9, adaptiveFiltering: true })
       .toBuffer();
@@ -160,7 +160,7 @@ export async function preprocessImageForVision(
       // Use JPEG 95% for large images to reduce size
       optimized = await sharp(imageBuffer)
         .normalise()
-        .jpeg({ quality: 95, mozjpeg: true })
+        .jpeg({ quality: 80, mozjpeg: true })
         .toBuffer();
       console.log(`      • Converted to JPEG: ${imageBuffer.length} → ${optimized.length} bytes`);
     } else {
@@ -229,8 +229,8 @@ export async function renderPDFForVision(
   pdfBuffer: Buffer
 ): Promise<PreprocessedImage[]> {
   try {
-    // Step 1: Render with high DPI (200 DPI for vision)
-    const rendered = await renderPDFToImages(pdfBuffer, 2.0);
+    // Step 1: Render with high DPI (150 DPI for vision is enough and faster)
+    const rendered = await renderPDFToImages(pdfBuffer, 1.5);
 
     // Step 2: Optimize for Vision
     const optimized: PreprocessedImage[] = [];
