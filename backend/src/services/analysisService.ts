@@ -39,21 +39,27 @@ export async function analyzeZipFile(zipBuffer: Buffer): Promise<AnalysisResult>
         console.log(`      • Total characters: ${cleanText.length}`);
         console.log(`      • Method: ${extractionResult.method} (Confidence: ${extractionResult.confidence.toFixed(1)}%)`);
 
-        if (cleanText.length > 100) {
+        const isLowConfidence = extractionResult.confidence < 80;
+
+        if (cleanText.length > 100 && !isLowConfidence) {
           console.log(`      • Status: ✅ GOOD (enough text for AI)`);
           console.log(`      • Preview: "${cleanText.substring(0, 150)}..."`);
-        } else if (cleanText.length > 0) {
+        } else if (cleanText.length > 0 && !isLowConfidence) {
           console.log(`      • Status: ⚠️  SHORT (${cleanText.length} chars - using what we have)`);
           console.log(`      • Preview: "${cleanText}"`);
         } else {
-          console.log(`      • Status: ⚠️  EMPTY/POOR (will render pages and try vision model)`);
+          if (isLowConfidence && cleanText.length > 0) {
+            console.log(`      • Status: ⚠️  LOW CONFIDENCE (${extractionResult.confidence.toFixed(1)}% < 80%) - switching to Vision`);
+          } else {
+            console.log(`      • Status: ⚠️  EMPTY/POOR (will render pages and try vision model)`);
+          }
         }
 
         // 3. Use AI to extract structured data
         let aiExtracted: any = null;
 
-        if (cleanText.length === 0) {
-          console.log(`\n   🖼️ No text found: rendering pages and sending images to OpenAI vision model...`);
+        if (cleanText.length === 0 || isLowConfidence) {
+          console.log(`\n   🖼️ ${isLowConfidence && cleanText.length > 0 ? 'Low confidence text' : 'No text found'}: rendering pages and sending images to OpenAI vision model...`);
           const rendered = await renderPDFForVision(file.content);
           const pageResults: any[] = [];
 
@@ -166,9 +172,9 @@ export async function analyzeZipFile(zipBuffer: Buffer): Promise<AnalysisResult>
           personalData: aiExtracted.personalData || {},
           vehicleData: aiExtracted.vehicleData || {},
           metadata: {
-            method: cleanText.length === 0 ? 'vision' : extractionResult.method,
+            method: (cleanText.length === 0 || isLowConfidence) ? 'vision' : extractionResult.method,
             textLength: cleanText.length,
-            confidence: cleanText.length === 0 ? 100 : extractionResult.confidence,
+            confidence: (cleanText.length === 0 || isLowConfidence) ? 100 : extractionResult.confidence,
             ocrTimeMs: ocrTime,
             renderTimeMs: 0 // Tracked inside render services if needed
           }
